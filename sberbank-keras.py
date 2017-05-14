@@ -8,9 +8,11 @@ from keras.models import Sequential
 from keras.layers import Dense, InputLayer
 from keras.wrappers.scikit_learn import KerasRegressor
 from keras.regularizers import l1, l2, l1_l2
+from keras.optimizers import adam, nadam, adamax
 
 
-df_train = pd.read_csv("sberbank_train.csv", parse_dates=['timestamp'])
+#df_train = pd.read_csv("sberbank_train.csv", parse_dates=['timestamp'])
+df_train = pd.read_csv("train_without_noise.csv", parse_dates=['timestamp'])
 df_test = pd.read_csv("sberbank_test.csv", parse_dates=['timestamp'])
 #df_macro = pd.read_csv("sberbank_macro.csv", parse_dates=['timestamp'])
 
@@ -59,20 +61,23 @@ y_train = np.log1p(df_train['price_doc'].values)
 ##  Make predictions
 ###
 
-def build_model(neurons=8):
+def build_model():
     model = Sequential()
     model.add(InputLayer(input_shape=(x_train.shape[1],)))
-    model.add(Dense(neurons, activation='relu', kernel_regularizer='l1_l2'))
+    model.add(Dense(8, activation='relu', kernel_regularizer='l1_l2'))
+    #model.add(Dense(6, activation='relu', kernel_regularizer='l1_l2'))
     model.add(Dense(1, kernel_regularizer='l1_l2'))
-    model.compile(loss='mean_squared_error', optimizer='adam')
+    model.compile(loss='mean_squared_error', optimizer=adam(decay=0.001))
     return model
 
 model = build_model()
+
 # history = model.fit(x_train.values,
 #                     y_train,
 #                     epochs=300,
 #                     verbose=2,
 #                     validation_split=.15)
+
 history = model.fit(x_train.values,
                     y_train,
                     epochs=300,

@@ -43,7 +43,7 @@ df_macro = pd.read_csv("sberbank_macro.csv", parse_dates=['timestamp'])
 # Drop crazy data points
 df_train.drop(df_train[df_train["life_sq"] > 7000].index, inplace=True)
 df_train.drop(df_train[df_train["full_sq"] > 5000].index, inplace=True)
-importance = sorted(importance.items(), key=operator.itemgetter(1))
+
 y_train = df_train['price_doc'].values
 id_test = df_test['id']
 
