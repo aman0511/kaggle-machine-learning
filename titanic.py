@@ -127,7 +127,6 @@ wanted_cols = ['Pclass_1', 'Pclass_2', 'Pclass_3',
 def getX(data):
     return data.as_matrix(wanted_cols)
 
-"""
 classifiers = [
     ('Logistic regression', linear_model.LogisticRegression()),
     #('SVM classifier', svm.SVC(kernel='linear')),
@@ -141,17 +140,15 @@ for name, candidate in classifiers:
     scores = cross_val_score(candidate, getX(data), data['Survived'], cv=5, scoring='accuracy')
     print(name, np.mean(scores))
 exit()
-"""
-
 
 
 model = RandomForestClassifier(n_estimators=500, max_features='auto', min_samples_split=20, min_samples_leaf=5)
 #model = GradientBoostingClassifier(n_estimators=25, learning_rate=0.1, max_features='auto', min_samples_split=20, min_samples_leaf=5, max_depth=5)
 model.fit(getX(data), data['Survived'])
 
-print pd.concat((pd.DataFrame(wanted_cols, columns = ['variable']),
-                 pd.DataFrame(model.feature_importances_, columns = ['importance'])),
-                axis = 1).sort_values(by='importance', ascending = False)[:35]
+# print pd.concat((pd.DataFrame(wanted_cols, columns = ['variable']),
+#                  pd.DataFrame(model.feature_importances_, columns = ['importance'])),
+#                 axis = 1).sort_values(by='importance', ascending = False)[:35]
 
 data = pd.read_csv('titanic-test.csv')
 
