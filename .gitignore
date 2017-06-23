@@ -1,0 +1,8 @@
+bin
+lib
+local
+share
+include
+.idea
+*.iml
+*.csv

@@ -11,13 +11,17 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.neighbors import KNeighborsRegressor
 
+
+pd.set_option('use_inf_as_null', True)
+
+
 #df_train = pd.read_csv("sberbank_train.csv", parse_dates=['timestamp'])
 df_train = pd.read_csv("train_without_noise.csv", parse_dates=['timestamp'])
 df_test = pd.read_csv("sberbank_test.csv", parse_dates=['timestamp'])
-df_macro = pd.read_csv("sberbank_macro.csv", parse_dates=['timestamp'])
+#df_macro = pd.read_csv("sberbank_macro.csv", parse_dates=['timestamp'])
 #df_predict = pd.read_csv("sberbank-weekly-mean-price.csv", parse_dates=['timestamp'])
 
-df_macro = df_macro[['timestamp','cpi', 'ppi', 'eurrub', 'usdrub']]
+#df_macro = df_macro[['timestamp','cpi', 'ppi', 'eurrub', 'usdrub']]
 
 df_train.drop(df_train[df_train["life_sq"] > 7000].index, inplace=True)
 df_train.drop(df_train[df_train["full_sq"] > 5000].index, inplace=True)
@@ -25,7 +29,7 @@ df_train.drop(df_train[df_train["full_sq"] > 5000].index, inplace=True)
 df_all = pd.concat([df_train, df_test])
 df_all.drop(['id', 'price_doc'], axis=1, inplace=True)
 #df_all = df_all.join(df_predict.set_index('timestamp'), on='timestamp', rsuffix='_mean')
-df_all = df_all.join(df_macro.set_index('timestamp'), on='timestamp', rsuffix='_macro')
+#df_all = df_all.join(df_macro.set_index('timestamp'), on='timestamp', rsuffix='_macro')
 
 # numeric_features = df_all.select_dtypes(include=[np.number])
 # # numeric_features.dtypes
@@ -53,12 +57,62 @@ df_all['dow'] = df_all.timestamp.dt.dayofweek
 #df_all['bad_month'] = df_all['month'].apply(lambda x: 'Bad' if x in (7,10,11) else 'Good')
 #df_all['bad_dow'] = df_all['dow'].apply(lambda x: 'Bad' if x in (5,6) else 'Good')
 #df_all.drop(['month', 'dow', 'timestamp'], axis=1, inplace=True)
+
+## Fixing wrong values
+df_all['floor'] = df_all['floor'].fillna(0.0).astype(float)
+df_all['max_floor'] = df_all['max_floor'].fillna(1.0).astype(float)
+
+# df_all['build_year'] = df_all['build_year'].astype('float')
+df_all['build_year'].replace([71.0], 1971.0, inplace=True)
+df_all['build_year'].replace([20.0, 0.0], 2000.0, inplace=True)
+# df_all['build_year'].replace([1.0], 2001.0, inplace=True)  ## Leads to NaN errors ?!?
+df_all['build_year'].replace([3.0], 2003.0, inplace=True)
+df_all['build_year'].replace([20052009.0, 215.0], 2005.0, inplace=True)
+# df_all['build_year'] = df_all['build_year'].astype('float')
+
+df_all['state'].replace([33], 3, inplace=True)
+
+# print df_all['full_sq'].isnull().any()
+# print df_all['life_sq'].isnull().any()
+# print df_all['kitch_sq'].isnull().any()
+# exit()
+
+# House characteristics
+df_all['floor_from_top'] = df_all['max_floor'] - df_all['floor']
+df_all['rel_floor'] = df_all['floor'] / df_all['max_floor']
+df_all['avg_room_size'] = (df_all['life_sq'] - df_all['kitch_sq']) / df_all['num_room']
+df_all['prop_living'] = df_all['life_sq'] / df_all['full_sq']
+df_all['prop_kitchen'] = df_all['kitch_sq'] / df_all['full_sq']
+df_all['extra_area'] = df_all['full_sq'] - df_all['life_sq']
+df_all['age_at_sale'] = df_all['build_year'] - df_all.timestamp.dt.year
+
+# print df_all['age_at_sale'].isnull().sum()
+# print df_all['age_at_sale'].dtype
+# print df_all['age_at_sale'].head()
+# print df_all['build_year'].head()
+# print years.head()
+# exit()
+
+# School charactereistics
+df_all['ratio_preschool'] = df_all['children_preschool'] / df_all['preschool_quota']
+df_all['ratio_school'] = df_all['children_school'] / df_all['school_quota']
+
+## Appartment building sales per month feature
+building_year_month = df_all['sub_area'] + \
+                      np.round(df_all['metro_km_avto'], decimals=2).astype(str) + \
+                      (df_all.timestamp.dt.month + \
+                       df_all.timestamp.dt.year * 100).astype(str)
+building_year_month_cnt_map = building_year_month.value_counts().to_dict()
+df_all['building_year_month_cnt'] = building_year_month.map(building_year_month_cnt_map)
+
+## Apparetement building
+## Disabling, this leads to 10.000+ features
+##df_all['building'] = df_all['sub_area'] + np.round(df_all['metro_km_avto'], decimals=2).astype(str)
+
 df_all.drop(['timestamp'], axis=1, inplace=True)
 
-#df_all['rel_floor'] = df_all['floor'].astype(float) / df_all['max_floor'].astype(float)
-#df_all['rel_kitch_sq'] = df_all['kitch_sq'].astype(float) / df_all['full_sq'].astype(float)
-
-numeric_feats = df_all.dtypes[df_all.dtypes != "object"].index
+#numeric_feats = df_all.dtypes[df_all.dtypes != "object"].index
+numeric_feats = df_all.select_dtypes(include=[np.floating]).columns
 
 num_train = len(df_train)
 df_all = pd.get_dummies(df_all, drop_first=True)
@@ -66,8 +120,18 @@ df_all = pd.get_dummies(df_all, drop_first=True)
 x_train_unnormalized = df_all[:num_train]
 x_test_unnormalized = df_all[num_train:]
 
+#df_all.replace([np.Inf, -np.Inf], np.NaN, inplace=True)
+
 df_all = df_all.fillna(df_all.mean())
 #df_all = df_all.astype('float64')
+
+#print df_all.isnull().any()
+# print df_all.columns[df_all.isnull().any()].tolist()
+# exit()
+
+# cols = [col for col in df_all.columns if not np.isfinite(df_all[col].values).any()]
+# print cols
+# exit()
 
 # Log transform skewed features
 skewness = df_all[numeric_feats].apply(lambda x: skew(x.dropna()))
@@ -150,11 +214,11 @@ dtest = xgb.DMatrix(x_test_unnormalized)
 # print 'Trained RF model'
 
 
-# et = ExtraTreesRegressor(n_estimators=75, min_samples_leaf=10)
-# et.fit(x_train, y_train)
-# pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(et.predict(x_test))})\
-#         .to_csv('sberbank_submissions/et.csv', index=False)
-# print 'Trained ET model'
+et = ExtraTreesRegressor(n_estimators=75, min_samples_leaf=10)
+et.fit(x_train, y_train)
+pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(et.predict(x_test))})\
+        .to_csv('sberbank_submissions/et.csv', index=False)
+print 'Trained ET model'
 
 
 # gsc = GridSearchCV(
@@ -196,7 +260,7 @@ dtest = xgb.DMatrix(x_test_unnormalized)
 # KNearestNeighbours(...)             : 0.0879 (0.0590) MSE
 
 
-# for i in range(1,5):
+# for i in range(1,8):
 #     xgb_params.update(colsample_bytree=0.7 + random.uniform(-0.15, 0.15),
 #                       subsample=0.7 + random.uniform(-0.15, 0.15),
 #                       max_depth=5 - random.randint(0,1))
@@ -212,18 +276,18 @@ dtest = xgb.DMatrix(x_test_unnormalized)
 # pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(linear_model.predict(x_test))}) \
 #     .to_csv('sberbank_submissions/elasticnet.csv', index=False)
 # print 'Trained ElasticNet() model!'
-#
-# svr_model = SVR(kernel='rbf', C=1.5, epsilon=0.075)
-# svr_model.fit(x_train, y_train)
-# pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(svr_model.predict(x_test))}) \
-#     .to_csv('sberbank_submissions/svr-1.csv', index=False)
-# print 'Trained SVM 1!'
-#
-# svr_model2 = SVR(kernel='rbf', C=1.4, epsilon=0.07)
-# svr_model2.fit(x_train, y_train)
-# pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(svr_model2.predict(x_test))}) \
-#     .to_csv('sberbank_submissions/svr-2.csv', index=False)
-# print 'Trained SVM 2!'
+
+svr_model = SVR(kernel='rbf', C=1.5, epsilon=0.075)
+svr_model.fit(x_train, y_train)
+pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(svr_model.predict(x_test))}) \
+    .to_csv('sberbank_submissions/svr-1.csv', index=False)
+print 'Trained SVM 1!'
+
+svr_model2 = SVR(kernel='rbf', C=1.4, epsilon=0.07)
+svr_model2.fit(x_train, y_train)
+pd.DataFrame({'id': df_test['id'], 'price_doc': np.expm1(svr_model2.predict(x_test))}) \
+    .to_csv('sberbank_submissions/svr-2.csv', index=False)
+print 'Trained SVM 2!'
 
 
 #svr_model3 = SVR(kernel='rbf', C=1.6, epsilon=0.08)
@@ -235,6 +299,8 @@ dtest = xgb.DMatrix(x_test_unnormalized)
 #y_test = ...
 
 #y_test = np.expm1(linear_model.predict(x_test))
+
+## https://www.kaggle.com/philippsp/a-collection-of-new-features
 
 # y_test = (np.expm1(svr_model.predict(x_test)) +
 #           #np.expm1(svr_model2.predict(x_test)) +
@@ -272,3 +338,15 @@ dtest = xgb.DMatrix(x_test_unnormalized)
 ## https://rasbt.github.io/mlxtend/api_subpackages/mlxtend.regressor/#stackingregressor
 
 ## https://www.kaggle.com/remap1/exploring-the-volatility-of-the-economy
+
+## https://www.kaggle.com/c/sberbank-russian-housing-market/discussion/32993#182655
+
+
+
+## https://www.kaggle.com/philippsp/a-collection-of-new-features
+
+
+## https://www.kaggle.com/tunguz/naive-subsampled-xgb-starter/code
+
+
+## TODO https://www.kaggle.com/kapilnandwana/xgb-russ-house-modified-params
