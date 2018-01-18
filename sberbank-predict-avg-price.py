@@ -81,7 +81,7 @@ datasetX_predict = scalerX.transform(datasetX_predict)
 
 scalerY = RobustScaler()
 datasetY = scalerY.fit_transform(datasetY)
-
+1
 look_back = 90
 
 # Transform into X=(t-look_back .. t) and Y=(t+1)

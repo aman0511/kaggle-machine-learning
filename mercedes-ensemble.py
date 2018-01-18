@@ -2,18 +2,20 @@ import pandas as pd
 import numpy as np
 from sklearn.feature_selection import SelectFromModel
 from sklearn.svm import SVR
-from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor, BaggingRegressor
+from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from sklearn.decomposition import PCA, FastICA
-from sklearn.random_projection import GaussianRandomProjection
+from sklearn.feature_selection import f_regression
 from sklearn.preprocessing import RobustScaler
-from sklearn.pipeline import make_pipeline, Pipeline, _name_estimators
-from sklearn.linear_model import ElasticNet, ElasticNetCV, LassoLars, Lasso
-from sklearn.model_selection import cross_val_score, KFold
+from sklearn.pipeline import Pipeline, _name_estimators
+from sklearn.linear_model import ElasticNet, Lasso
+from sklearn.model_selection import cross_val_score, cross_val_predict
 from sklearn.metrics import r2_score
 from keras.models import Sequential
 from keras.layers import Dense, InputLayer, GaussianNoise
 from keras.wrappers.scikit_learn import KerasRegressor
 import xgboost as xgb
+from mlxtend.regressor import StackingCVRegressor
+import lightgbm as lgbm
 
 
 train = pd.read_csv('mercedes_train.csv')
@@ -30,8 +32,8 @@ df_all.drop(['ID', 'y'], axis=1, inplace=True)
 # One-hot encoding of categorical/strings
 df_all = pd.get_dummies(df_all, drop_first=True)
 
-train = df_all[:num_train]
-test = df_all[num_train:]
+train = df_all[:num_train].values
+test = df_all[num_train:].values
 
 
 class LogExpPipeline(Pipeline):
@@ -94,7 +96,7 @@ class AddColumns(BaseEstimator, TransformerMixin):
 #
 
 xgb_model = xgb.sklearn.XGBRegressor(max_depth=4, learning_rate=0.005, subsample=0.9, base_score=y_mean,
-                                     objective='reg:linear', n_estimators=1300)
+                                     objective='reg:linear', n_estimators=1000, colsample_bytree=0.7)
 
 
 xgb_pipe = Pipeline(_name_estimators([AddColumns(transform_=PCA(n_components=9)),
@@ -118,65 +120,55 @@ rf_model = RandomForestRegressor(n_estimators=250, n_jobs=4, min_samples_split=2
 
 
 #
+# LightGBM
+#
+
+lgbm_model = lgbm.LGBMRegressor(
+    objective='regression',
+    n_estimators=350,
+    learning_rate=0.015,
+    num_leaves=5,
+    min_data_in_leaf=40,
+    colsample_bytree=0.4,
+    min_gain_to_split=0.0004,
+    subsample=0.95,
+    subsample_freq=1
+)
+
+#
 # Extra Trees
 #
 
-#et_model = ExtraTreesRegressor(n_estimators=100, n_jobs=4, min_samples_split=25, min_samples_leaf=35,
-#                               max_features=150)
+et_model = ExtraTreesRegressor(n_estimators=100, n_jobs=4, min_samples_split=25, min_samples_leaf=35,
+                               max_features=150)
 
 # results = cross_val_score(et_model, train, y_train, cv=5, scoring='r2')
 # print("ET score: %.4f (%.4f)" % (results.mean(), results.std()))
 
 
+stack = StackingCVRegressor(#meta_regressor=Ridge(alpha=10),
+                            meta_regressor=ElasticNet(l1_ratio=0.1, alpha=1.5),
+                            regressors=(svm_pipe, en_pipe, xgb_pipe, rf_model, lgbm_model))
+                            #regressors=(svm_pipe, en_pipe, xgb_pipe, rf_model))
 
-class Ensemble(object):
-    def __init__(self, n_splits, stacker, base_models):
-        self.n_splits = n_splits
-        self.stacker = stacker
-        self.base_models = base_models
 
-    def fit_predict(self, X, y, T):
-        X = np.array(X)
-        y = np.array(y)
-        T = np.array(T)
+# cv_pred = cross_val_predict(stack, train, y_train, cv=5)
+# print("R2 score: %.4f" % r2_score(y_train, cv_pred))
+# exit()
 
-        folds = list(KFold(n_splits=self.n_splits, shuffle=True, random_state=2016).split(X, y))
+## R2 score: 0.5600 (en_pipe, rf_model)
+## R2 score: 0.5601 (svm_pipe, en_pipe, xgb_pipe, rf_model, et_model)
+## R2 score: 0.5605 (svm_pipe, en_pipe, xgb_pipe, rf_model, et_model, lgbm_model)
+## R2 score: 0.5618 (svm_pipe, en_pipe, xgb_pipe, rf_model, lgbm_model)
 
-        S_train = np.zeros((X.shape[0], len(self.base_models)))
-        S_test = np.zeros((T.shape[0], len(self.base_models)))
-        for i, clf in enumerate(self.base_models):
+stack.fit(train, y_train)
 
-            S_test_i = np.zeros((T.shape[0], self.n_splits))
-
-            for j, (train_idx, test_idx) in enumerate(folds):
-                X_train = X[train_idx]
-                y_train = y[train_idx]
-                X_holdout = X[test_idx]
-                y_holdout = y[test_idx]
-
-                clf.fit(X_train, y_train)
-                y_pred = clf.predict(X_holdout)[:]
-
-                print "Model %d fold %d score %f" % (i, j, r2_score(y_holdout, y_pred))
-
-                S_train[test_idx, i] = y_pred
-                S_test_i[:, j] = clf.predict(T)[:]
-            S_test[:, i] = S_test_i.mean(axis=1)
-
-        # results = cross_val_score(self.stacker, S_train, y, cv=5, scoring='r2')
-        # print("Stacker score: %.4f (%.4f)" % (results.mean(), results.std()))
-        # exit()
-
-        self.stacker.fit(S_train, y)
-        res = self.stacker.predict(S_test)[:]
-        return res
-
-stack = Ensemble(n_splits=5,
-                 #stacker=ElasticNetCV(l1_ratio=[x/10.0 for x in range(1,10)]),
-                 stacker=ElasticNet(l1_ratio=0.1, alpha=1.4),
-                 base_models=(svm_pipe, en_pipe, xgb_pipe, rf_model))
-
-y_test = stack.fit_predict(train, y_train, test)
+y_test = stack.predict(test)
 
 df_sub = pd.DataFrame({'ID': id_test, 'y': y_test})
-df_sub.to_csv('mercedes-submission.csv', index=False)
+df_sub.to_csv('mercedes_submissions/ensemble.csv', index=False)
+
+
+##
+## https://www.kaggle.com/eaturner/stacking-em-up/output
+##

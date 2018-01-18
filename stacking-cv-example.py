@@ -2,10 +2,15 @@ from mlxtend.regressor import StackingRegressor
 from sklearn.datasets import load_boston
 from sklearn.svm import SVR
 from sklearn.linear_model import Lasso
+from sklearn.preprocessing import RobustScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import cross_val_score
+import numpy as np
 
 X, y = load_boston(return_X_y=True)
+
+X = RobustScaler().fit_transform(X)
+y = np.log1p(y)
 
 svr = SVR(kernel='linear')
 lasso = Lasso()

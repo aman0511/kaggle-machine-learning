@@ -9,6 +9,11 @@ from sklearn.random_projection import GaussianRandomProjection, SparseRandomProj
 train = pd.read_csv('mercedes_train.csv')
 test = pd.read_csv('mercedes_test.csv')
 
+extra = pd.read_csv('mercedes-extra.csv')
+train_extra = extra.join(test, on='ID', how='inner', rsuffix='_bla')
+train_extra.drop(['ID_bla'], axis=1, inplace=True)
+train = pd.concat([train, train_extra])
+
 y_train = train['y'].values
 y_mean = np.mean(y_train)
 id_test = test['ID']
@@ -91,7 +96,7 @@ y_test = model.predict(dtest)
 
 
 df_sub = pd.DataFrame({'ID': id_test, 'y': y_test})
-df_sub.to_csv('mercedes-submission.csv', index=False)
+df_sub.to_csv('mercedes_submissions/xgb.csv', index=False)
 
 # Xt, Xv, Yt, Yv = train_test_split(train, y_train, test_size=0.25)
 # model.fit(Xt, Yt, [(Xv,Yv)], eval_metric='rmse', early_stopping_rounds=50)

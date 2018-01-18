@@ -20,6 +20,11 @@ from sklearn.svm import SVR
 train = pd.read_csv('mercedes_train.csv')
 test = pd.read_csv('mercedes_test.csv')
 
+extra = pd.read_csv('mercedes-extra.csv')
+train_extra = extra.join(test, on='ID', how='inner', rsuffix='_bla')
+train_extra.drop(['ID_bla'], axis=1, inplace=True)
+train = pd.concat([train, train_extra])
+
 y_train = train['y'].values
 y_mean = np.mean(y_train)
 id_test = test['ID']
@@ -173,7 +178,7 @@ dtest = xgb.DMatrix(np.hstack((test, meta_features)))
 y_test = model.predict(dtest)
 
 df_sub = pd.DataFrame({'ID': id_test, 'y': y_test})
-df_sub.to_csv('mercedes-submission.csv', index=False)
+df_sub.to_csv('mercedes_submissions/xgb-stack.csv', index=False)
 
 
 # print "Parameter search for meta model..."

@@ -2,18 +2,24 @@ import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import GridSearchCV
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, cross_val_predict
 from sklearn.svm import SVR
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA, FastICA
 from sklearn.feature_selection import SelectFromModel
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import RobustScaler, LabelEncoder
 from sklearn.pipeline import make_pipeline
+from sklearn.metrics import r2_score
 from sklearn.linear_model import ElasticNet, Lasso, LassoCV, Ridge, RidgeCV,\
     LinearRegression, LassoLars, LassoLarsCV, LassoLarsIC
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
 
 train = pd.read_csv('mercedes_train.csv')
 test = pd.read_csv('mercedes_test.csv')
+
+extra = pd.read_csv('mercedes-extra.csv')
+train_extra = extra.join(test, on='ID', how='inner', rsuffix='_bla')
+train_extra.drop(['ID_bla'], axis=1, inplace=True)
+train = pd.concat([train, train_extra])
 
 y_train = np.log1p(train['y'].values)
 id_test = test['ID']
@@ -25,36 +31,71 @@ df_all.drop(['ID', 'y'], axis=1, inplace=True)
 # One-hot encoding of categorical/strings
 df_all = pd.get_dummies(df_all, drop_first=True)
 
+# Label-encoding object columns
+# for c in df_all.columns:
+#     if df_all[c].dtype == 'object':
+#         df_all[c] = LabelEncoder().fit_transform(df_all[c].values)
+
 train = df_all[:num_train]
 test = df_all[num_train:]
 
+# pipe = make_pipeline(RobustScaler(),
+#                      SelectFromModel(Lasso(alpha=0.001)),
+#                      SVR(kernel='rbf', C=1.0, epsilon=0.05))
+#
+# pipe.fit(train, y_train)
+# df_sub = pd.DataFrame({'ID': id_test, 'y': np.expm1(pipe.predict(test))})
+# df_sub.to_csv('mercedes_submissions/svr.csv', index=False)
+#
+#
+# pipe = make_pipeline(RobustScaler(),
+#                      SelectFromModel(Lasso(alpha=0.001)),
+#                      ElasticNet(alpha=0.001, l1_ratio=0.1))
+#
+# pipe.fit(train, y_train)
+# df_sub = pd.DataFrame({'ID': id_test, 'y': np.expm1(pipe.predict(test))})
+# df_sub.to_csv('mercedes_submissions/elasticnet.csv', index=False)
+#
+# exit()
+
+
 pipe = make_pipeline(RobustScaler(),
-                     #PCA(n_components=125),
+                     #PCA(n_components=150),
                      #PCA(),
                      #SelectFromModel(Ridge(alpha=35)),
-                     #SelectFromModel(Lasso(alpha=0.03)),
-                     SelectFromModel(LassoCV()),
-                     ElasticNet(alpha=0.001, l1_ratio=0.1))
-                     #LassoLars())
+                     SelectFromModel(Lasso(alpha=0.001)),
+                     #SelectFromModel(LassoCV()),
+                     #ElasticNet(alpha=0.001, l1_ratio=0.1))
+                     Ridge(alpha=10.0))
+                     #Lasso(alpha=0.001))
                      #SVR(kernel='rbf', C=1.0, epsilon=0.05)) # With PCA
                      #SVR(kernel='rbf', C=0.5, epsilon=0.05)) # With SelectFromModel
 
 # pipe = RandomForestRegressor(n_estimators=250, n_jobs=4, min_samples_split=25,
 #                              min_samples_leaf=25, max_depth=3)
 
-results = cross_val_score(pipe, train, y_train, cv=10, scoring='r2')
-print("Score: %.4f (%.4f)" % (results.mean(), results.std()))
+# results = cross_val_score(pipe, train, y_train, cv=10, scoring='r2')
+# print("Score: %.4f (%.4f)" % (results.mean(), results.std()))
+# exit()
+
+pipe.fit(train, y_train)
+
+cv_pred = cross_val_predict(pipe, train, y_train, cv=5)
+print("R2 score: %.4f" % r2_score(y_train, cv_pred))
 exit()
 
-## Score: 0.6216 (0.0664) => SelectFromModel + SVR
-## Score: 0.6216 (0.0657) => SelectFromModel + ElasticNet
-## Score: 0.6079 (0.0646) => PCA(125) + ElasticNet
-## Score: 0.6200 (0.0685) => PCA + SVR
-## Score: 0.6200 (0.0685) => SVR
-## Score: 0.6192 (0.0702) => SelectFromModel + RandomForestRegressor
-## Score: 0.6222 (0.0662) => RandomForestRegressor
-## Score: 0.5876 (0.0589) => LassoLarsCV
-## Score: 0.5927 (0.0593) => LassoLarsIC
+
+## R2 score: 0.6101 => SelectFromModel + SVR(C=1)
+## R2 score: 0.6101 => SelectFromModel + SVR(C=0.5)
+## R2 score: 0.6091 => SelectFromModel + SVR(C=0.5) + LabelEncoder
+## R2 score: 0.5919 => SelectFromModel + ElasticNet
+## R2 score: 0.5994 => SelectFromModel + Ridge(alpha=10)
+## R2 score: 0.5941 => PCA(150) + ElasticNet
+## R2 score: 0.6082 => PCA + SVR
+## R2 score: 0.6082 => SVR
+## R2 score: 0.5895 => Lasso(alpha=0.001)
+## R2 score: 0.6092 => RandomForestRegressor
+
 
 # gsc = GridSearchCV(
 #     estimator=pipe,
