@@ -5,4 +5,6 @@ share
 include
 .idea
 *.iml
-*.csv
+harddrive.csv
+*submission*
+mercedes*.csv
